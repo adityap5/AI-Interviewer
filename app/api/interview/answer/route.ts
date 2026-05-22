@@ -3,7 +3,6 @@ import dbConnect from "@/lib/db";
 import Session from "@/models/Session";
 import { getInterviewerPrompt } from "@/lib/prompts";
 import { evaluateAnswer, streamInterviewerResponse } from "@/lib/ollama";
-import { StreamingTextResponse, OpenAIStream } from "ai";
 
 export async function POST(req: Request) {
   try {
@@ -94,7 +93,9 @@ export async function POST(req: Request) {
         },
       });
 
-      return new StreamingTextResponse(staticStream);
+      return new Response(staticStream, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
     }
 
     // Save session database state before starting stream response (e.g. user message and index)
@@ -147,60 +148,84 @@ export async function POST(req: Request) {
     }
 
     try {
-      // Create a custom stream using OpenAIStream to intercept the completed response
-      const interceptedStream = OpenAIStream(stream as any, {
-        onCompletion: async (completion) => {
+      let accumulatedCompletion = "";
+      const encoder = new TextEncoder();
+
+      const customReadableStream = new ReadableStream({
+        async start(controller) {
           try {
-            // Re-fetch the session and persist the new question and the evaluation result together
-            const s = await Session.findById(sessionId);
-            if (s) {
-              s.messages.push({
-                role: "interviewer",
-                content: completion,
-                timestamp: new Date(),
-              });
-
-              // Apply adaptive difficulty logic using evaluation results
-              const overallScore =
-                (evaluationResult.technical +
-                  evaluationResult.clarity +
-                  evaluationResult.depth +
-                  evaluationResult.confidence) /
-                4;
-
-              let currentMultiplier = s.difficultyMultiplier || 1.0;
-              if (overallScore > 8) {
-                currentMultiplier = Math.min(2.0, currentMultiplier + 0.2);
-              } else if (overallScore < 5) {
-                currentMultiplier = Math.max(0.5, currentMultiplier - 0.1);
+            for await (const chunk of stream) {
+              const text = chunk.choices[0]?.delta?.content || "";
+              if (text) {
+                accumulatedCompletion += text;
+                controller.enqueue(encoder.encode(text));
               }
-              s.difficultyMultiplier = currentMultiplier;
-
-              s.evaluations.push({
-                questionIndex,
-                technical: evaluationResult.technical,
-                clarity: evaluationResult.clarity,
-                depth: evaluationResult.depth,
-                confidence: evaluationResult.confidence,
-                flags: evaluationResult.flags,
-                questionText: lastQuestionText,
-                answerText: answer,
-              });
-
-              await s.save();
             }
-          } catch (dbErr) {
-            console.error("Failed to persist interviewer streamed message and evaluation to DB:", dbErr);
+            controller.close();
+
+            // Run database save asynchronously in background
+            (async () => {
+              try {
+                // Re-fetch the session and persist the new question and the evaluation result together
+                const s = await Session.findById(sessionId);
+                if (s) {
+                  s.messages.push({
+                    role: "interviewer",
+                    content: accumulatedCompletion,
+                    timestamp: new Date(),
+                  });
+
+                  // Apply adaptive difficulty logic using evaluation results
+                  const overallScore =
+                    (evaluationResult.technical +
+                      evaluationResult.clarity +
+                      evaluationResult.depth +
+                      evaluationResult.confidence) /
+                    4;
+
+                  let currentMultiplier = s.difficultyMultiplier || 1.0;
+                  if (overallScore > 8) {
+                    currentMultiplier = Math.min(2.0, currentMultiplier + 0.2);
+                  } else if (overallScore < 5) {
+                    currentMultiplier = Math.max(0.5, currentMultiplier - 0.1);
+                  }
+                  s.difficultyMultiplier = currentMultiplier;
+
+                  s.evaluations.push({
+                    questionIndex,
+                    technical: evaluationResult.technical,
+                    clarity: evaluationResult.clarity,
+                    depth: evaluationResult.depth,
+                    confidence: evaluationResult.confidence,
+                    flags: evaluationResult.flags,
+                    questionText: lastQuestionText,
+                    answerText: answer,
+                  });
+
+                  await s.save();
+                }
+              } catch (dbErr) {
+                console.error("Failed to persist interviewer streamed message and evaluation to DB:", dbErr);
+              }
+            })();
+          } catch (streamErr) {
+            console.error("Error reading from Ollama stream:", streamErr);
+            controller.error(streamErr);
           }
-        },
+        }
       });
 
-      return new StreamingTextResponse(interceptedStream);
+      return new Response(customReadableStream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Transfer-Encoding": "chunked"
+        }
+      });
     } catch (aiError: any) {
       console.error("AI service error in /api/interview/answer during stream intercept:", aiError);
       return NextResponse.json(
-        { error: "AI service is offline. Please make sure Ollama is running: ollama serve", code: "AI_OFFLINE" },
-        { status: 503 }
+        { error: "AI service error during response serialization. Please verify local service.", code: "STREAM_ERROR" },
+        { status: 500 }
       );
     }
   } catch (error: any) {
