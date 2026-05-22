@@ -56,6 +56,7 @@ export async function streamInterviewerResponse(
       ],
       stream: true,
       temperature: 0.7,
+      max_tokens: 200,
     });
 
     // Return the raw response stream to allow custom wrappers with callbacks
@@ -115,6 +116,7 @@ export async function evaluateAnswer(
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1, // Low temperature for high consistency in JSON structure
       response_format: { type: "json_object" }, // Ask OpenAI API for JSON if Ollama supports it
+      max_tokens: 150,
     });
 
     const content = response.choices[0]?.message?.content;

@@ -100,25 +100,7 @@ export async function POST(req: Request) {
     // Save session database state before starting stream response (e.g. user message and index)
     await session.save();
 
-    // 6. Trigger Evaluator call in the background (do not await it here!)
-    const evaluationPromise = evaluateAnswer(
-      session.role,
-      session.difficulty,
-      session.interviewType,
-      lastQuestionText,
-      answer
-    ).catch((evalError: any) => {
-      console.error("Background answer evaluation failed, using default scores.", evalError);
-      return {
-        technical: 5,
-        clarity: 5,
-        depth: 5,
-        confidence: 5,
-        flags: ["evaluation_failed"],
-      };
-    });
-
-    // 7. Build next prompt using the current difficulty multiplier
+    // 6. Build next prompt using the current difficulty multiplier
     const systemPrompt = getInterviewerPrompt(
       session.role,
       session.difficulty,
@@ -132,17 +114,43 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
-    // Call Ollama for streaming interviewer response
-    try {
-      const stream = await streamInterviewerResponse(systemPrompt, formattedHistory);
+    // 7. Run evaluation and interviewer response stream in parallel
+    let evaluationResult: any;
+    let stream: any;
 
+    try {
+      [evaluationResult, stream] = await Promise.all([
+        evaluateAnswer(
+          session.role,
+          session.difficulty,
+          session.interviewType,
+          lastQuestionText,
+          answer
+        ).catch((evalError: any) => {
+          console.error("Answer evaluation failed, using default scores.", evalError);
+          return {
+            technical: 5,
+            clarity: 5,
+            depth: 5,
+            confidence: 5,
+            flags: ["evaluation_failed"],
+          };
+        }),
+        streamInterviewerResponse(systemPrompt, formattedHistory)
+      ]);
+    } catch (aiError: any) {
+      console.error("AI service error in /api/interview/answer during Promise.all:", aiError);
+      return NextResponse.json(
+        { error: "AI service is offline. Please make sure Ollama is running: ollama serve", code: "AI_OFFLINE" },
+        { status: 503 }
+      );
+    }
+
+    try {
       // Create a custom stream using OpenAIStream to intercept the completed response
       const interceptedStream = OpenAIStream(stream as any, {
         onCompletion: async (completion) => {
           try {
-            // Await the background evaluation that ran in parallel
-            const evaluationResult = await evaluationPromise;
-
             // Re-fetch the session and persist the new question and the evaluation result together
             const s = await Session.findById(sessionId);
             if (s) {
@@ -189,7 +197,7 @@ export async function POST(req: Request) {
 
       return new StreamingTextResponse(interceptedStream);
     } catch (aiError: any) {
-      console.error("AI service error in /api/interview/answer:", aiError);
+      console.error("AI service error in /api/interview/answer during stream intercept:", aiError);
       return NextResponse.json(
         { error: "AI service is offline. Please make sure Ollama is running: ollama serve", code: "AI_OFFLINE" },
         { status: 503 }
