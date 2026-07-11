@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import {
   ArrowRight,
   Sparkles,
@@ -20,7 +23,13 @@ import {
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 
-export default function Home() {
+export default async function Home() {
+  const session = await getServerSession(authOptions);
+  
+  if (session) {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-screen bg-background text-textPrimary relative overflow-x-hidden">
       {/* Premium Ambient Background Effects */}

@@ -43,8 +43,7 @@ export default function LoginPage() {
         toast.error(result.error);
       } else {
         toast.success("Successfully logged in!");
-        router.refresh();
-        router.push("/dashboard");
+        window.location.href = "/dashboard";
       }
     } catch (error) {
       toast.error("An unexpected error occurred during login.");
