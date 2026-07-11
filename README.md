@@ -120,3 +120,17 @@ sequenceDiagram
 1.  **Concurrently Resolved Pipelines**: Replaced serial LLM operations with standard concurrent Promise calls.
 2.  **Web Stream Interceptor**: Replaced Vercel AI SDK `StreamingTextResponse` protocol wrapping with native plain-text stream controllers. This fixed formatting artifacts like `0:"text"` appearing in chat bubbles.
 3.  **Low-Latency Small Model**: Swapped to the highly optimized `gemma2:2b` model. This drops CPU response latency to **1-2 seconds**, ensuring the app remains perfectly snappy on ordinary development machines.
+
+---
+
+## Deployment
+
+1. Get free Groq API key at https://console.groq.com
+2. Deploy to Vercel: vercel deploy
+3. Add these environment variables in Vercel dashboard:
+   - GROQ_API_KEY
+   - GROQ_MODEL=llama-3.1-8b-instant
+   - MONGODB_URI
+   - NEXTAUTH_SECRET
+   - NEXTAUTH_URL=https://your-app.vercel.app
+4. Redeploy after adding env variables

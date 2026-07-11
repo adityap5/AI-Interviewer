@@ -3,7 +3,9 @@ import dbConnect from "@/lib/db";
 import Session from "@/models/Session";
 import { getInterviewerPrompt } from "@/lib/prompts";
 import { evaluateAnswer, streamInterviewerResponse } from "@/lib/ollama";
+import { validateEnv } from "@/lib/validateEnv";
 
+validateEnv();
 export async function POST(req: Request) {
   try {
     const { sessionId, answer, questionIndex } = await req.json();
@@ -50,11 +52,11 @@ export async function POST(req: Request) {
       let evaluationResult;
       try {
         evaluationResult = await evaluateAnswer(
+          lastQuestionText,
+          answer,
           session.role,
           session.difficulty,
-          session.interviewType,
-          lastQuestionText,
-          answer
+          session.interviewType
         );
       } catch (evalError: any) {
         console.error("Answer evaluation failed for final question, using default scores.", evalError);
@@ -122,11 +124,11 @@ export async function POST(req: Request) {
     try {
       [evaluationResult, stream] = await Promise.all([
         evaluateAnswer(
+          lastQuestionText,
+          answer,
           session.role,
           session.difficulty,
-          session.interviewType,
-          lastQuestionText,
-          answer
+          session.interviewType
         ).catch((evalError: any) => {
           console.error("Answer evaluation failed, using default scores.", evalError);
           return {
@@ -137,7 +139,10 @@ export async function POST(req: Request) {
             flags: ["evaluation_failed"],
           };
         }),
-        streamInterviewerResponse(systemPrompt, formattedHistory)
+        streamInterviewerResponse([
+          { role: 'system', content: systemPrompt },
+          ...formattedHistory
+        ])
       ]);
     } catch (aiError: any) {
       console.error("AI service error in /api/interview/answer during Promise.all:", aiError);
@@ -154,12 +159,16 @@ export async function POST(req: Request) {
       const customReadableStream = new ReadableStream({
         async start(controller) {
           try {
-            for await (const chunk of stream) {
-              const text = chunk.choices[0]?.delta?.content || "";
-              if (text) {
-                accumulatedCompletion += text;
-                controller.enqueue(encoder.encode(text));
-              }
+            const reader = stream.getReader();
+            const decoder = new TextDecoder();
+            
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              const text = decoder.decode(value, { stream: true });
+              accumulatedCompletion += text;
+              controller.enqueue(value);
             }
             controller.close();
 

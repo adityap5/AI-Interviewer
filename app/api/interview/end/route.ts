@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Session from "@/models/Session";
-import { generateFinalScorecard } from "@/lib/ollama";
+import { generateFinalScore } from "@/lib/ollama";
+import { validateEnv } from "@/lib/validateEnv";
 
+validateEnv();
 export async function POST(req: Request) {
   try {
     const { sessionId } = await req.json();
@@ -36,10 +38,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Call Ollama to generate the final scorecard JSON
+    // 3. Call AI to generate the final scorecard JSON
     let scorecard;
     try {
-      scorecard = await generateFinalScorecard(session.difficulty, evaluations);
+      scorecard = await generateFinalScore(evaluations, session.role, session.difficulty);
     } catch (aiError: any) {
       console.error("Failed to generate scorecard via AI, using default fallbacks.", aiError);
       scorecard = {

@@ -1,210 +1,170 @@
-import OpenAI from "openai";
-import { OpenAIStream } from "ai";
-import { getEvaluatorPrompt, getFinalScorecardPrompt } from "./prompts";
+import Groq from 'groq-sdk'
 
-// Configure local OpenAI client pointing to Ollama endpoint
-const baseURL = (process.env.OLLAMA_BASE_URL || "http://localhost:11434") + "/v1";
-const model = process.env.OLLAMA_MODEL || "mistral";
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY
+})
 
-export const client = new OpenAI({
-  baseURL,
-  apiKey: "ollama",
-  maxRetries: 1, // Fail fast if Ollama is not running
-});
+const MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant'
 
-/**
- * Generates the opening question of the mock interview session
- */
-export async function generateOpeningQuestion(
-  systemPrompt: string
-): Promise<string> {
-  try {
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: "Please introduce yourself briefly and ask the first question to begin the interview." }
-      ],
-      temperature: 0.7,
-    });
-
-    return response.choices[0]?.message?.content || "Hello. I'm ready to begin the interview. Can you tell me about yourself and your background?";
-  } catch (error: any) {
-    console.error("Ollama connection error in generateOpeningQuestion:", error);
-    if (error.code === "ECONNREFUSED" || error.message?.includes("fetch failed") || error.message?.includes("Failed to fetch")) {
-      throw new Error("AI service unavailable. Make sure Ollama is running: ollama serve");
-    }
-    throw new Error(error.message || "An error occurred while calling the local AI model");
-  }
-}
-
-/**
- * 1. streamInterviewerResponse
- * Calls Ollama model with the interviewer prompt.
- * Returns a streaming response utilizing Vercel AI SDK's OpenAIStream.
- */
+// ─── Interviewer: streams the next question/follow-up ───────────────
 export async function streamInterviewerResponse(
-  systemPrompt: string,
-  history: { role: "system" | "user" | "assistant"; content: string }[]
-) {
-  try {
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history,
-      ],
-      stream: true,
-      temperature: 0.7,
-      max_tokens: 200,
-    });
+  messages: { role: 'user' | 'assistant' | 'system'; content: string }[],
+): Promise<ReadableStream<Uint8Array>> {
+  const stream = await groq.chat.completions.create({
+    model: MODEL,
+    messages,
+    stream: true,
+    max_tokens: 200,
+    temperature: 0.8
+  })
 
-    // Return the raw response stream to allow custom wrappers with callbacks
-    return response;
-  } catch (error: any) {
-    console.error("Ollama connection error in streamInterviewerResponse:", error);
-    
-    // Check if the error is a connection error (Ollama not running)
-    if (error.code === "ECONNREFUSED" || error.message?.includes("fetch failed") || error.message?.includes("Failed to fetch")) {
-      throw new Error("AI service unavailable. Make sure Ollama is running: ollama serve");
+  return new ReadableStream({
+    async start(controller) {
+      for await (const chunk of stream) {
+        const word = chunk.choices[0]?.delta?.content || ''
+        if (word) {
+          controller.enqueue(new TextEncoder().encode(word))
+        }
+      }
+      controller.close()
     }
-    
-    throw new Error(error.message || "An error occurred while calling the local AI model");
-  }
+  })
 }
 
-/**
- * Helper to clean Markdown and other wrapper text around JSON responses from Ollama
- */
-function cleanJSONString(raw: string): string {
-  let cleaned = raw.trim();
-  // Remove markdown codeblock wrappers if present
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(json)?/, "");
-  }
-  if (cleaned.endsWith("```")) {
-    cleaned = cleaned.replace(/```$/, "");
-  }
-  return cleaned.trim();
-}
-
-/**
- * 2. evaluateAnswer (non-streaming)
- * Calls Ollama mistral model with the evaluator prompt.
- * Parses the JSON response safely and returns scores.
- */
+// ─── Evaluator: silently scores the answer, returns JSON ─────────────
 export async function evaluateAnswer(
+  question: string,
+  answer: string,
   role: string,
   difficulty: string,
-  type: string,
-  question: string,
-  answer: string
-) {
-  const defaultEvaluation = {
+  interviewType: string
+): Promise<{
+  technical: number
+  clarity: number
+  depth: number
+  confidence: number
+  flags: string[]
+}> {
+  const defaultScore = {
     technical: 5,
     clarity: 5,
     depth: 5,
     confidence: 5,
-    flags: ["shallow"],
-  };
+    flags: []
+  }
 
   try {
-    const prompt = getEvaluatorPrompt(role, difficulty, type, question, answer);
-
-    const response = await client.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1, // Low temperature for high consistency in JSON structure
-      response_format: { type: "json_object" }, // Ask OpenAI API for JSON if Ollama supports it
+    const response = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: `You are evaluating an interview answer. 
+Return ONLY valid JSON, no explanation, no markdown, no backticks.
+Schema:
+{
+  "technical": <0-10>,
+  "clarity": <0-10>,
+  "depth": <0-10>,
+  "confidence": <0-10>,
+  "flags": []
+}
+Flag options: "vague", "no_example", "off_topic", "shallow", 
+"strong_answer", "excellent_depth", "good_communication"
+Context: ${role} ${difficulty} ${interviewType} interview.`
+        },
+        {
+          role: 'user',
+          content: `Question: ${question}\nAnswer: ${answer}`
+        }
+      ],
+      stream: false,
       max_tokens: 150,
-    });
+      temperature: 0.1
+    })
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      return defaultEvaluation;
-    }
+    const text = response.choices[0]?.message?.content || ''
+    const clean = text.replace(/```json|```/g, '').trim()
+    const parsed = JSON.parse(clean)
+    return parsed
 
-    try {
-      const cleaned = cleanJSONString(content);
-      const parsed = JSON.parse(cleaned);
-      
-      // Ensure all fields are present and valid
-      return {
-        technical: typeof parsed.technical === "number" ? parsed.technical : 5,
-        clarity: typeof parsed.clarity === "number" ? parsed.clarity : 5,
-        depth: typeof parsed.depth === "number" ? parsed.depth : 5,
-        confidence: typeof parsed.confidence === "number" ? parsed.confidence : 5,
-        flags: Array.isArray(parsed.flags) ? parsed.flags : [],
-      };
-    } catch (parseError) {
-      console.error("JSON parsing failed for answer evaluation, falling back to default.", parseError, content);
-      return defaultEvaluation;
-    }
-  } catch (error: any) {
-    console.error("Ollama evaluation error:", error);
-    if (error.code === "ECONNREFUSED" || error.message?.includes("fetch failed")) {
-      throw new Error("AI service unavailable. Make sure Ollama is running: ollama serve");
-    }
-    return defaultEvaluation;
+  } catch (error) {
+    console.error('Evaluator parsing failed:', error)
+    return defaultScore
   }
 }
 
-/**
- * 3. generateFinalScorecard
- * Synthesizes a comprehensive final score and recommendations sheet.
- */
-export async function generateFinalScorecard(
-  difficulty: string,
-  evaluations: any[]
-) {
-  const defaultScorecard = {
+// ─── Final scorecard generator ────────────────────────────────────────
+export async function generateFinalScore(
+  evaluations: Array<{
+    technical: number
+    clarity: number
+    depth: number
+    confidence: number
+    flags: string[]
+    questionText: string
+    answerText: string
+  }>,
+  role: string,
+  difficulty: string
+): Promise<{
+  overall: number
+  technical: number
+  clarity: number
+  depth: number
+  confidence: number
+  strengths: string[]
+  improvements: string[]
+  recommendation: string
+}> {
+  const defaultFinal = {
     overall: 5,
     technical: 5,
     clarity: 5,
     depth: 5,
     confidence: 5,
-    strengths: ["Completed the mock interview session"],
-    improvements: ["Practice structuring and speaking depth in answers"],
-    recommendation: "Needs more prep",
-  };
+    strengths: ['Completed the interview'],
+    improvements: ['Practice more'],
+    recommendation: 'Needs more preparation'
+  }
 
   try {
-    const prompt = getFinalScorecardPrompt(difficulty, evaluations);
+    const response = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: `Generate a final interview scorecard.
+Return ONLY valid JSON, no explanation, no markdown, no backticks.
+Schema:
+{
+  "overall": <0-10>,
+  "technical": <0-10>,
+  "clarity": <0-10>,
+  "depth": <0-10>,
+  "confidence": <0-10>,
+  "strengths": ["specific strength 1", "specific strength 2"],
+  "improvements": ["specific area 1", "specific area 2"],
+  "recommendation": "<one of: Ready for ${difficulty} roles | Almost there, 2-3 weeks prep needed | Needs significant preparation | Strong candidate>"
+}`
+        },
+        {
+          role: 'user',
+          content: `Role: ${role}, Difficulty: ${difficulty}
+Evaluations: ${JSON.stringify(evaluations)}`
+        }
+      ],
+      stream: false,
+      max_tokens: 300,
+      temperature: 0.2
+    })
 
-    const response = await client.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-    });
+    const text = response.choices[0]?.message?.content || ''
+    const clean = text.replace(/```json|```/g, '').trim()
+    return JSON.parse(clean)
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      return defaultScorecard;
-    }
-
-    try {
-      const cleaned = cleanJSONString(content);
-      const parsed = JSON.parse(cleaned);
-      return {
-        overall: typeof parsed.overall === "number" ? parsed.overall : 5,
-        technical: typeof parsed.technical === "number" ? parsed.technical : 5,
-        clarity: typeof parsed.clarity === "number" ? parsed.clarity : 5,
-        depth: typeof parsed.depth === "number" ? parsed.depth : 5,
-        confidence: typeof parsed.confidence === "number" ? parsed.confidence : 5,
-        strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ["Practice structure"],
-        improvements: Array.isArray(parsed.improvements) ? parsed.improvements : ["Deepen concepts"],
-        recommendation: typeof parsed.recommendation === "string" ? parsed.recommendation : "Almost there, 2-3 weeks of prep needed",
-      };
-    } catch (parseError) {
-      console.error("JSON parsing failed for final scorecard, falling back to default.", parseError, content);
-      return defaultScorecard;
-    }
-  } catch (error: any) {
-    console.error("Ollama scorecard generation error:", error);
-    if (error.code === "ECONNREFUSED" || error.message?.includes("fetch failed")) {
-      throw new Error("AI service unavailable. Make sure Ollama is running: ollama serve");
-    }
-    return defaultScorecard;
+  } catch (error) {
+    console.error('Final score generation failed:', error)
+    return defaultFinal
   }
 }

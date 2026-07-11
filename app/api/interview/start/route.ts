@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Session from "@/models/Session";
 import { getInterviewerPrompt } from "@/lib/prompts";
-import { generateOpeningQuestion } from "@/lib/ollama";
+import { streamInterviewerResponse } from "@/lib/ollama";
+import { validateEnv } from "@/lib/validateEnv";
 
+validateEnv();
 export async function POST(req: Request) {
   try {
     const { role, difficulty, interviewType, userId } = await req.json();
@@ -36,14 +38,23 @@ export async function POST(req: Request) {
     // Generate initial prompt
     const systemPrompt = getInterviewerPrompt(role, difficulty, interviewType);
 
-    // Call Ollama to generate first question
+    // Call AI to generate first question
     let openingQuestion = "";
     try {
-      openingQuestion = await generateOpeningQuestion(systemPrompt);
+      const stream = await streamInterviewerResponse([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: 'Please introduce yourself briefly and ask the first question to begin the interview.' }
+      ]);
+      const reader = stream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        openingQuestion += new TextDecoder().decode(value);
+      }
     } catch (aiError: any) {
       console.error("AI service error during start:", aiError);
       return NextResponse.json(
-        { error: aiError.message || "AI service unavailable. Make sure Ollama is running: ollama serve", code: "AI_OFFLINE" },
+        { error: aiError.message || "AI service unavailable.", code: "AI_OFFLINE" },
         { status: 503 }
       );
     }
