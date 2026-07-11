@@ -4,7 +4,26 @@ export type InterviewDifficulty = "junior" | "mid" | "senior";
 
 export type InterviewType = "technical" | "behavioral" | "mixed";
 
-export type SessionStatus = "in-progress" | "completed";
+export type SessionStatus = "in-progress" | "completed" | "cancelled";
+
+export interface TechnologyOptions {
+  frontend: string[];
+  backend: string[];
+}
+
+export const TECHNOLOGY_OPTIONS: TechnologyOptions = {
+  frontend: [
+    'React', 'Next.js', 'Vue', 'Angular', 'TypeScript',
+    'JavaScript', 'CSS/TailwindCSS', 'Redux', 'Testing (Jest/RTL)',
+    'Performance Optimization', 'Web APIs', 'GraphQL'
+  ],
+  backend: [
+    'Node.js', 'Express', 'Python/Django', 'Python/FastAPI',
+    'PostgreSQL', 'MongoDB', 'Redis', 'REST APIs', 'GraphQL',
+    'Docker', 'AWS', 'System Design', 'Authentication/Security',
+    'Message Queues'
+  ]
+};
 
 export interface Message {
   role: "interviewer" | "user";
@@ -18,7 +37,9 @@ export interface Evaluation {
   clarity: number;   // 0-10
   depth: number;     // 0-10
   confidence: number; // 0-10
+  overall: number;
   flags: string[];   // ["vague", "no example", "off-topic"]
+  detailedFeedback: string;
   questionText: string;
   answerText: string;
 }
@@ -55,4 +76,5 @@ export interface InterviewSetupForm {
   role: InterviewRole;
   difficulty: InterviewDifficulty;
   interviewType: InterviewType;
+  selectedTechnologies: string[];
 }

@@ -10,13 +10,15 @@ interface InterviewHeaderProps {
   difficulty: string;
   questionIndex: number;
   totalQuestions?: number;
+  onCancelClick?: () => void;
 }
 
 export function InterviewHeader({
   role,
   difficulty,
   questionIndex,
-  totalQuestions = 6,
+  totalQuestions = 10,
+  onCancelClick,
 }: InterviewHeaderProps) {
   const [seconds, setSeconds] = useState(0);
 
@@ -70,6 +72,15 @@ export function InterviewHeader({
 
       {/* Progress & Stopwatch */}
       <div className="flex items-center gap-6 justify-between sm:justify-end w-full sm:w-auto border-t border-border/25 sm:border-0 pt-4 sm:pt-0">
+        {onCancelClick && (
+          <button
+            onClick={onCancelClick}
+            className="text-xs font-semibold text-error hover:text-error/80 transition-colors mr-2 border border-error/30 px-3 py-1.5 rounded-lg bg-error/5"
+          >
+            Cancel Interview
+          </button>
+        )}
+        
         {/* Question Counter */}
         <div className="text-right">
           <span className="text-[10px] font-bold text-accent uppercase tracking-wider block">

@@ -8,9 +8,11 @@ import { ChatBubble } from "./ChatBubble";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { AnswerInput } from "./AnswerInput";
 import { ScoreCard } from "@/components/Scorecard/ScoreCard";
+import { CancelModal } from "./CancelModal";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { Loader2, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface InterviewRoomClientProps {
   initialSession: {
@@ -28,9 +30,34 @@ interface InterviewRoomClientProps {
 
 export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps) {
   const store = useInterviewStore();
+  const router = useRouter();
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [streamingText, setStreamingText] = useState("");
   const [isSynthesizingScore, setIsSynthesizingScore] = useState(false);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const handleCancelConfirm = async () => {
+    setIsCancelling(true);
+    try {
+      const response = await fetch("/api/interview/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: store.sessionId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to cancel session.");
+      }
+
+      toast.success("Interview cancelled.");
+      router.push("/dashboard");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to cancel.");
+      setIsCancelling(false);
+      setIsCancelModalOpen(false);
+    }
+  };
 
   // Initialize store on mount
   useEffect(() => {
@@ -63,6 +90,8 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
   const handleAnswerSubmit = async (answerText: string) => {
     if (store.status === "completed" || store.isAITyping) return;
 
+    const currentIndex = store.currentQuestionIndex;
+
     // 1. Append the user's response to the client state immediately
     const userMsg: Message = {
       role: "user",
@@ -71,7 +100,6 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
     };
     store.addMessage(userMsg);
     store.setAITyping(true);
-    setStreamingText("");
 
     try {
       // 2. POST the answer to the API
@@ -81,7 +109,7 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
         body: JSON.stringify({
           sessionId: store.sessionId,
           answer: answerText,
-          questionIndex: store.currentQuestionIndex,
+          questionIndex: currentIndex,
         }),
       });
 
@@ -90,14 +118,26 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
         throw new Error(errData.error || "Ollama is offline or database error occurred.");
       }
 
-      // 3. Increment the client question index
-      const newQuestionIndex = store.currentQuestionIndex + 1;
-      store.setCurrentQuestionIndex(newQuestionIndex);
+      // Check if interview is complete
+      const contentType = response.headers.get("content-type");
+      
+      if (contentType?.includes("application/json")) {
+        // Interview complete - backend returned JSON with finalScore
+        const data = await response.json();
+        if (data.interviewComplete) {
+          store.setFinalScore(data.finalScore);
+          store.setStatus("completed");
+          store.setAITyping(false);
+          return;
+        }
+      }
 
-      // 4. Stream the response chunks in real-time
+      // Otherwise read as stream (questions 1-9)
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let accumulatedText = "";
+      let aiMessage = "";
+
+      store.addMessage({ role: "interviewer", content: "", timestamp: new Date() });
 
       if (reader) {
         while (true) {
@@ -105,53 +145,18 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
           if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
-          accumulatedText += chunk;
-          setStreamingText(accumulatedText);
+          aiMessage += chunk;
+          // Update last message in store progressively
+          store.updateLastMessage(aiMessage);
         }
       }
 
-      // 5. Append complete streamed interviewer response to message history
-      const interviewerMsg: Message = {
-        role: "interviewer",
-        content: accumulatedText,
-        timestamp: new Date(),
-      };
-      store.addMessage(interviewerMsg);
-      setStreamingText("");
+      store.setCurrentQuestionIndex(currentIndex + 1);
       store.setAITyping(false);
 
-      // 6. Check if mock interview is now completed (6 questions done)
-      if (newQuestionIndex >= 6) {
-        store.setStatus("completed");
-        await handleInterviewCompletion();
-      }
     } catch (err: any) {
       toast.error(err.message || "Something went wrong.");
       store.setAITyping(false);
-      setStreamingText("");
-    }
-  };
-
-  const handleInterviewCompletion = async () => {
-    setIsSynthesizingScore(true);
-    try {
-      const response = await fetch("/api/interview/end", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: store.sessionId }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to finalize scores.");
-      }
-
-      store.setFinalScore(data.finalScore);
-      toast.success("Final scorecard generated!");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to calculate scorecard metrics.");
-    } finally {
-      setIsSynthesizingScore(false);
     }
   };
 
@@ -178,7 +183,8 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
         role={initialSession.role}
         difficulty={initialSession.difficulty}
         questionIndex={store.currentQuestionIndex}
-        totalQuestions={6}
+        totalQuestions={10}
+        onCancelClick={() => setIsCancelModalOpen(true)}
       />
 
       {/* Chat scroll workspace */}
@@ -193,13 +199,8 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
             />
           ))}
 
-          {/* Render the streaming interviewer response in real-time */}
-          {store.isAITyping && streamingText !== "" && (
-            <ChatBubble role="interviewer" content={streamingText} />
-          )}
-
           {/* Render typing bounce dots if no text is stream-flowing yet */}
-          {store.isAITyping && streamingText === "" && <ThinkingIndicator />}
+          {store.isAITyping && store.messages[store.messages.length - 1]?.content === "" && <ThinkingIndicator />}
 
           {/* Render Scorecard Synthesizer loading screen */}
           {isSynthesizingScore && (
@@ -229,6 +230,13 @@ export function InterviewRoomClient({ initialSession }: InterviewRoomClientProps
       {store.status === "in-progress" && (
         <AnswerInput onSubmit={handleAnswerSubmit} disabled={store.isAITyping || isSynthesizingScore} />
       )}
+
+      <CancelModal
+        isOpen={isCancelModalOpen}
+        onClose={() => setIsCancelModalOpen(false)}
+        onConfirm={handleCancelConfirm}
+        isCancelling={isCancelling}
+      />
     </div>
   );
 }

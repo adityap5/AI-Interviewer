@@ -1,5 +1,5 @@
 import Groq from 'groq-sdk'
-
+import { getEvaluatorPrompt } from './prompts'
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 })
@@ -37,55 +37,61 @@ export async function evaluateAnswer(
   answer: string,
   role: string,
   difficulty: string,
-  interviewType: string
+  interviewType: string,
+  technologies: string[] = []
 ): Promise<{
   technical: number
   clarity: number
   depth: number
   confidence: number
+  overall: number
   flags: string[]
+  detailedFeedback: string
 }> {
   const defaultScore = {
     technical: 5,
     clarity: 5,
     depth: 5,
     confidence: 5,
-    flags: []
+    overall: 5,
+    flags: [],
+    detailedFeedback: "Answer was recorded but evaluation failed."
   }
 
   try {
+    const promptContent = getEvaluatorPrompt(role, difficulty, technologies, question, answer);
+    
     const response = await groq.chat.completions.create({
       model: MODEL,
       messages: [
         {
-          role: 'system',
-          content: `You are evaluating an interview answer. 
-Return ONLY valid JSON, no explanation, no markdown, no backticks.
-Schema:
-{
-  "technical": <0-10>,
-  "clarity": <0-10>,
-  "depth": <0-10>,
-  "confidence": <0-10>,
-  "flags": []
-}
-Flag options: "vague", "no_example", "off_topic", "shallow", 
-"strong_answer", "excellent_depth", "good_communication"
-Context: ${role} ${difficulty} ${interviewType} interview.`
-        },
-        {
           role: 'user',
-          content: `Question: ${question}\nAnswer: ${answer}`
+          content: promptContent
         }
       ],
       stream: false,
-      max_tokens: 150,
+      max_tokens: 300,
       temperature: 0.1
     })
 
     const text = response.choices[0]?.message?.content || ''
     const clean = text.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(clean)
+    
+    if (!parsed.overall) {
+      parsed.overall = Math.round(
+        (parsed.technical * 0.4) + 
+        (parsed.clarity * 0.2) + 
+        (parsed.depth * 0.3) + 
+        (parsed.confidence * 0.1)
+      )
+    }
+    parsed.overall = Math.min(10, Math.max(0, parsed.overall))
+    
+    if (!parsed.detailedFeedback) {
+      parsed.detailedFeedback = "No detailed feedback provided by AI."
+    }
+    
     return parsed
 
   } catch (error) {

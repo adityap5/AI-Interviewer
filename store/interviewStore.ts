@@ -20,6 +20,7 @@ interface InterviewState {
   setStatus: (status: SessionStatus) => void;
   setFinalScore: (score: FinalScore | null) => void;
   setCurrentQuestionIndex: (index: number) => void;
+  updateLastMessage: (content: string) => void;
   reset: () => void;
 }
 
@@ -42,6 +43,14 @@ export const useInterviewStore = create<InterviewState>((set) => ({
   setStatus: (status) => set({ status }),
   setFinalScore: (score) => set({ finalScore: score }),
   setCurrentQuestionIndex: (index) => set({ currentQuestionIndex: index }),
+  updateLastMessage: (content) => set((state) => {
+    const messages = [...state.messages]
+    messages[messages.length - 1] = {
+      ...messages[messages.length - 1],
+      content
+    }
+    return { messages }
+  }),
   reset: () =>
     set({
       sessionId: null,

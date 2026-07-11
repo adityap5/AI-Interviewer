@@ -10,7 +10,8 @@ interface SessionItem {
   id: string;
   role: string;
   difficulty: string;
-  overallScore: number;
+  overallScore: number | null;
+  status: string;
   date: string;
 }
 
@@ -80,13 +81,19 @@ export function SessionHistory({ sessions }: SessionHistoryProps) {
               {/* Right Column: Score Badging & Button links */}
               <div className="flex items-center gap-4 justify-between sm:justify-end border-t border-border/20 sm:border-t-0 pt-3 sm:pt-0">
                 {/* Score badge */}
-                <div className={`px-3 py-1.5 rounded-xl border font-mono font-bold text-xs flex items-center gap-1.5 ${getScoreColor(session.overallScore)}`}>
-                  <Award className="w-3.5 h-3.5" />
-                  Score: {session.overallScore.toFixed(1)}
-                </div>
+                {session.status === "cancelled" ? (
+                  <div className="px-3 py-1.5 rounded-xl border font-mono font-bold text-xs flex items-center gap-1.5 text-textSecondary bg-surface border-border">
+                    Cancelled
+                  </div>
+                ) : (
+                  <div className={`px-3 py-1.5 rounded-xl border font-mono font-bold text-xs flex items-center gap-1.5 ${getScoreColor(session.overallScore as number)}`}>
+                    <Award className="w-3.5 h-3.5" />
+                    Score: {(session.overallScore as number).toFixed(1)}
+                  </div>
+                )}
 
                 {/* View Details Link */}
-                <Link href={`/interview/${session.id}`}>
+                <Link href={`/dashboard/session/${session.id}`}>
                   <Button variant="ghost" size="sm" className="text-xs group pr-2 flex items-center gap-1">
                     View Details
                     <ChevronRight className="w-3.5 h-3.5 text-textSecondary group-hover:text-accent group-hover:translate-x-0.5 transition-all duration-150" />

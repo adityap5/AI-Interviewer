@@ -16,13 +16,15 @@ export async function GET(req: Request) {
 
     await dbConnect();
 
-    // Fetch completed sessions for the user, sorted by createdAt descending
+    // Fetch completed and cancelled sessions for the user, sorted by createdAt descending
     const sessions = await Session.find({
       userId,
-      status: "completed",
-      finalScore: { $ne: null }, // Ensure a final scorecard exists
+      $or: [
+        { status: "completed", finalScore: { $ne: null } },
+        { status: "cancelled" }
+      ]
     })
-      .select("role difficulty finalScore.overall createdAt completedAt")
+      .select("role difficulty status finalScore.overall createdAt completedAt cancelledAt")
       .sort({ createdAt: -1 });
 
     return NextResponse.json(sessions);

@@ -8,7 +8,7 @@ import { validateEnv } from "@/lib/validateEnv";
 validateEnv();
 export async function POST(req: Request) {
   try {
-    const { role, difficulty, interviewType, userId } = await req.json();
+    const { role, difficulty, interviewType, selectedTechnologies, userId } = await req.json();
 
     // Body Validation
     if (!role || !difficulty || !interviewType || !userId) {
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     await dbConnect();
 
     // Generate initial prompt
-    const systemPrompt = getInterviewerPrompt(role, difficulty, interviewType);
+    const systemPrompt = getInterviewerPrompt(role, difficulty, interviewType, selectedTechnologies || [], 0);
 
     // Call AI to generate first question
     let openingQuestion = "";
@@ -66,15 +66,17 @@ export async function POST(req: Request) {
       difficulty,
       interviewType,
       status: "in-progress",
+      selectedTechnologies: selectedTechnologies || [],
       messages: [
         {
           role: "interviewer",
           content: openingQuestion,
           timestamp: new Date(),
+          questionIndex: 0,
         },
       ],
       currentQuestionIndex: 0,
-      totalQuestions: 6,
+      totalQuestions: 10,
       evaluations: [],
       finalScore: null,
     });

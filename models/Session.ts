@@ -14,6 +14,9 @@ const MessageSchema = new Schema({
     type: Date,
     default: Date.now,
   },
+  questionIndex: {
+    type: Number,
+  },
 });
 
 const EvaluationSchema = new Schema({
@@ -44,6 +47,12 @@ const EvaluationSchema = new Schema({
     required: true,
     min: 0,
     max: 10,
+  },
+  overall: {
+    type: Number,
+  },
+  detailedFeedback: {
+    type: String,
   },
   flags: {
     type: [String],
@@ -128,7 +137,7 @@ const SessionSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["in-progress", "completed"],
+      enum: ["in-progress", "completed", "cancelled"],
       default: "in-progress",
     },
     messages: {
@@ -145,7 +154,7 @@ const SessionSchema = new Schema(
     },
     totalQuestions: {
       type: Number,
-      default: 6,
+      default: 10,
     },
     currentQuestionIndex: {
       type: Number,
@@ -155,6 +164,10 @@ const SessionSchema = new Schema(
       type: Number,
       default: 1.0,
     },
+    selectedTechnologies: {
+      type: [String],
+      default: [],
+    },
     createdAt: {
       type: Date,
       default: Date.now,
@@ -162,6 +175,13 @@ const SessionSchema = new Schema(
     completedAt: {
       type: Date,
       default: null,
+    },
+    cancelledAt: {
+      type: Date,
+    },
+    questionsAnswered: {
+      type: Number,
+      default: 0,
     },
   },
   {

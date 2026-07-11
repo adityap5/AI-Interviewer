@@ -21,11 +21,13 @@ export default async function DashboardPage() {
 
   await dbConnect();
 
-  // 1. Fetch completed sessions for the user sorted descending
+  // 1. Fetch completed and cancelled sessions for the user sorted descending
   const dbSessions = await Session.find({
     userId: session.user.id,
-    status: "completed",
-    finalScore: { $ne: null },
+    $or: [
+      { status: "completed", finalScore: { $ne: null } },
+      { status: "cancelled" }
+    ]
   })
     .sort({ createdAt: -1 })
     .lean();
@@ -35,7 +37,8 @@ export default async function DashboardPage() {
     id: s._id.toString(),
     role: s.role,
     difficulty: s.difficulty,
-    overallScore: s.finalScore.overall,
+    overallScore: s.finalScore ? s.finalScore.overall : null,
+    status: s.status,
     date: new Date(s.createdAt).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -43,14 +46,15 @@ export default async function DashboardPage() {
     }),
   }));
 
-  // 3. Compute metric averages for diagnostics
+  // 3. Compute metric averages for diagnostics (only completed sessions)
+  const completedSessions = dbSessions.filter((s: any) => s.status === "completed" && s.finalScore);
+  const sessionCount = completedSessions.length;
   let technicalSum = 0;
   let claritySum = 0;
   let depthSum = 0;
   let confidenceSum = 0;
-  const sessionCount = dbSessions.length;
 
-  dbSessions.forEach((s: any) => {
+  completedSessions.forEach((s: any) => {
     technicalSum += s.finalScore.technical || 5;
     claritySum += s.finalScore.clarity || 5;
     depthSum += s.finalScore.depth || 5;
@@ -64,8 +68,8 @@ export default async function DashboardPage() {
     confidence: sessionCount > 0 ? confidenceSum / sessionCount : 0,
   };
 
-  // 4. Synthesize chronological score chart data (last 10 sessions)
-  const chartData = [...dbSessions]
+  // 4. Synthesize chronological score chart data (last 10 completed sessions)
+  const chartData = [...completedSessions]
     .reverse()
     .slice(-10)
     .map((s: any) => ({

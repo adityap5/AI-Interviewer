@@ -24,10 +24,13 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 
+import { TECHNOLOGY_OPTIONS } from "@/types";
+
 const setupSchema = z.object({
   role: z.enum(["frontend", "backend", "fullstack", "dsa", "system-design"]),
   difficulty: z.enum(["junior", "mid", "senior"]),
   interviewType: z.enum(["technical", "behavioral", "mixed"]),
+  selectedTechnologies: z.array(z.string()).default([]),
 });
 
 type SetupInputs = z.infer<typeof setupSchema>;
@@ -77,6 +80,7 @@ export default function InterviewSetupPage() {
       role: "frontend",
       difficulty: "mid",
       interviewType: "technical",
+      selectedTechnologies: [],
     },
   });
 
@@ -99,6 +103,7 @@ export default function InterviewSetupPage() {
           role: data.role,
           difficulty: data.difficulty,
           interviewType: data.interviewType,
+          selectedTechnologies: data.selectedTechnologies,
           userId: authSession.user.id,
         }),
       });
@@ -157,14 +162,14 @@ export default function InterviewSetupPage() {
         <div className="flex justify-between items-center mb-8 border-b border-border/45 pb-6">
           <div>
             <span className="text-xs font-semibold text-accent uppercase tracking-widest">
-              Step {step} of 3
+              Step {step} of 4
             </span>
             <h1 className="text-2xl font-bold tracking-tight text-textPrimary mt-1">
               Configure Mock Session
             </h1>
           </div>
           <div className="flex gap-2">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div
                 key={s}
                 className={`h-1.5 rounded-full transition-all duration-200 ${
@@ -326,6 +331,67 @@ export default function InterviewSetupPage() {
 
               {step === 3 && (
                 <motion.div
+                  key="step3_tech"
+                  custom={animDir}
+                  variants={slideVariants}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  className="space-y-6"
+                >
+                  <div>
+                    <h2 className="text-lg font-bold text-textPrimary">Select Technologies</h2>
+                    <p className="text-sm text-textSecondary mt-1">
+                      Pick the specific technologies you want to be tested on. 
+                    </p>
+                  </div>
+                  
+                  {['frontend', 'backend', 'fullstack'].includes(selectedRole) ? (
+                    <div className="space-y-6">
+                      {(['frontend', 'backend'] as const).map(category => (
+                        (selectedRole === category || selectedRole === 'fullstack') && (
+                          <div key={category} className="space-y-3">
+                            <h3 className="text-sm font-semibold text-textPrimary capitalize">{category} Tech Stack</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {TECHNOLOGY_OPTIONS[category].map(tech => {
+                                const isSelected = watch("selectedTechnologies")?.includes(tech);
+                                return (
+                                  <button
+                                    key={tech}
+                                    type="button"
+                                    onClick={() => {
+                                      const current = watch("selectedTechnologies") || [];
+                                      const next = isSelected
+                                        ? current.filter(t => t !== tech)
+                                        : [...current, tech];
+                                      setValue("selectedTechnologies", next);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+                                      isSelected
+                                        ? "bg-accent text-white border-accent"
+                                        : "bg-surface text-textSecondary border-border hover:border-accent/50"
+                                    }`}
+                                  >
+                                    {tech}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-textSecondary border border-border/50 rounded-xl bg-surface/30">
+                      Technology selection is typically not required for {selectedRole} roles.
+                      You can continue to the next step.
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {step === 4 && (
+                <motion.div
                   key="step3"
                   custom={animDir}
                   variants={slideVariants}
@@ -370,12 +436,22 @@ export default function InterviewSetupPage() {
                       <Badge variant="primary">{selectedType}</Badge>
                     </div>
 
-                    <div className="flex items-center justify-between pb-2">
+                    <div className="flex items-center justify-between border-b border-border/30 pb-4">
                       <div className="flex items-center gap-3">
                         <CheckCircle className="w-5 h-5 text-success" />
                         <span className="text-sm font-medium text-textPrimary">Total Questions</span>
                       </div>
-                      <span className="text-sm font-bold text-textPrimary">6 Questions</span>
+                      <span className="text-sm font-bold text-textPrimary">10 Questions</span>
+                    </div>
+
+                    <div className="flex items-center justify-between pb-2">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle className="w-5 h-5 text-success" />
+                        <span className="text-sm font-medium text-textPrimary">Tech Stack</span>
+                      </div>
+                      <span className="text-sm font-bold text-textPrimary max-w-[200px] text-right truncate">
+                        {watch("selectedTechnologies")?.length ? watch("selectedTechnologies").join(", ") : "General"}
+                      </span>
                     </div>
                   </Card>
 
@@ -407,7 +483,7 @@ export default function InterviewSetupPage() {
               <div />
             )}
 
-            {step < 3 ? (
+            {step < 4 ? (
               <Button type="button" onClick={nextStep} className="flex items-center gap-2">
                 Continue
                 <ArrowRight className="w-4 h-4" />
