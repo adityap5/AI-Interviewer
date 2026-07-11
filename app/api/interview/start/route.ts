@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Session from "@/models/Session";
+import User from "@/models/User";
 import { getInterviewerPrompt } from "@/lib/prompts";
 import { streamInterviewerResponse } from "@/lib/ollama";
 import { validateEnv } from "@/lib/validateEnv";
@@ -35,6 +36,22 @@ export async function POST(req: Request) {
     // Connect to database
     await dbConnect();
 
+    // Check usage limits
+    const user: any = await User.findById(userId);
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const interviewsUsed = user.interviewsUsed || 0;
+    const interviewsLimit = user.interviewsLimit || 2;
+
+    if (interviewsUsed >= interviewsLimit) {
+      return NextResponse.json(
+        { error: "Free limit reached.", code: "FREE_LIMIT_REACHED" },
+        { status: 403 }
+      );
+    }
+
     // Generate initial prompt
     const systemPrompt = getInterviewerPrompt(role, difficulty, interviewType, selectedTechnologies || [], 0);
 
@@ -58,6 +75,9 @@ export async function POST(req: Request) {
         { status: 503 }
       );
     }
+
+    // Increment usage
+    await User.findByIdAndUpdate(userId, { $inc: { interviewsUsed: 1 } });
 
     // Save to Database
     const session = await Session.create({

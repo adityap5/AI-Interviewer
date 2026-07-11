@@ -18,6 +18,14 @@ const UserSchema = new Schema(
       type: String,
       required: [true, "Password is required"],
     },
+    interviewsUsed: {
+      type: Number,
+      default: 0,
+    },
+    interviewsLimit: {
+      type: Number,
+      default: 2,
+    },
     createdAt: {
       type: Date,
       default: Date.now,

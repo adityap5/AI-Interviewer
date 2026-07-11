@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -23,6 +23,7 @@ import {
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
+import { PricingModal } from "@/components/PricingModal";
 
 import { TECHNOLOGY_OPTIONS } from "@/types";
 
@@ -73,6 +74,29 @@ export default function InterviewSetupPage() {
   const { data: authSession } = useSession();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [usage, setUsage] = useState<any>(null);
+  const [isCheckingUsage, setIsCheckingUsage] = useState(true);
+
+  useEffect(() => {
+    const fetchUsage = async () => {
+      try {
+        const res = await fetch("/api/user/usage");
+        if (res.ok) {
+          const data = await res.json();
+          setUsage(data);
+          if (data.isLimitReached) {
+            setIsModalOpen(true);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch usage:", err);
+      } finally {
+        setIsCheckingUsage(false);
+      }
+    };
+    fetchUsage();
+  }, []);
 
   const { register, watch, setValue, handleSubmit } = useForm<SetupInputs>({
     resolver: zodResolver(setupSchema),
@@ -158,8 +182,22 @@ export default function InterviewSetupPage() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 relative bg-glow-effect max-w-5xl mx-auto w-full">
       <div className="w-full max-w-3xl relative z-10">
-        {/* Progress header */}
-        <div className="flex justify-between items-center mb-8 border-b border-border/45 pb-6">
+        {isCheckingUsage ? (
+          <div className="flex flex-col items-center justify-center space-y-4 py-24 text-textSecondary">
+            <Loader2 className="w-8 h-8 animate-spin text-accent" />
+            <p>Checking usage limits...</p>
+          </div>
+        ) : isModalOpen && usage ? (
+          <PricingModal 
+            isOpen={isModalOpen} 
+            onClose={() => setIsModalOpen(false)}
+            interviewsUsed={usage.interviewsUsed}
+            interviewsLimit={usage.interviewsLimit}
+          />
+        ) : (
+          <>
+            {/* Progress header */}
+            <div className="flex justify-between items-center mb-8 border-b border-border/45 pb-6">
           <div>
             <span className="text-xs font-semibold text-accent uppercase tracking-widest">
               Step {step} of 4
@@ -502,6 +540,8 @@ export default function InterviewSetupPage() {
             )}
           </div>
         </form>
+        </>
+        )}
       </div>
     </div>
   );

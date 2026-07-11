@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { LogOut, PlayCircle, Sparkles, UserCheck } from "lucide-react";
 import SignOutButton from "@/components/Dashboard/SignOutButton";
+import { DashboardUsageClient } from "@/components/Dashboard/DashboardUsageClient";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -98,6 +99,9 @@ export default async function DashboardPage() {
 
         {/* User Account Controls */}
         <div className="flex items-center gap-4">
+          <Link href="/pricing" className="text-xs font-semibold text-textSecondary hover:text-textPrimary transition-colors">
+            Pricing
+          </Link>
           <div className="hidden sm:flex items-center gap-2 text-xs text-textSecondary font-semibold">
             <UserCheck className="w-4 h-4 text-accent" />
             <span>Logged in as: {session.user.name}</span>
@@ -109,8 +113,8 @@ export default async function DashboardPage() {
       {/* Main content grid */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-10 sm:px-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative z-10">
         
-        {/* TOP PANEL: Hero Welcome banner */}
-        <div className="lg:col-span-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 border-b border-border/50 pb-8">
+        {/* TOP PANEL: Hero Welcome banner & Usage */}
+        <div className="lg:col-span-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-2">
           <div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-textPrimary">
               Welcome back, {session.user.name}!
@@ -119,13 +123,9 @@ export default async function DashboardPage() {
               Identify architectural vulnerabilities in your technical pitch and behavioral responses. Practice with adaptive, challanging, mistral-driven prompts.
             </p>
           </div>
-          <Link href="/interview/setup" className="w-full md:w-auto shrink-0">
-            <Button className="w-full flex items-center gap-2 shadow-lg shadow-accent/20">
-              Start New Mock
-              <PlayCircle className="w-4 h-4" />
-            </Button>
-          </Link>
         </div>
+
+        <DashboardUsageClient />
 
         {/* LEFT COLUMN: History Center (60%) */}
         <div className="lg:col-span-7 space-y-6">

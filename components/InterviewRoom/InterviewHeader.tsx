@@ -57,6 +57,9 @@ export function InterviewHeader({
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
+        <Link href="/pricing" className="hidden sm:block text-xs font-semibold text-textSecondary hover:text-textPrimary transition-colors ml-2">
+          Pricing
+        </Link>
         <div>
           <h1 className="text-base font-bold tracking-tight text-textPrimary flex items-center gap-2">
             {getRoleTitle(role)}

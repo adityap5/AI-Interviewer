@@ -52,6 +52,12 @@ export default async function Home() {
             </span>
           </div>
         </div>
+        {/* Desktop Links */}
+        <div className="hidden md:flex items-center gap-8">
+          <Link href="/pricing" className="text-sm font-semibold text-textSecondary hover:text-textPrimary transition-colors">
+            Pricing
+          </Link>
+        </div>
         <div className="flex items-center gap-4">
           <Link href="/login">
             <Button variant="ghost" size="sm" className="text-xs font-semibold">
